@@ -149,6 +149,10 @@ func NewController(app AppInterface) *Controller {
 	return c
 }
 
+func (c *Controller) Application() AppInterface {
+	return c.app
+}
+
 // Listen on a port
 func (c *Controller) Listen(port string) {
 	addr, _ := net.ResolveTCPAddr("tcp", port)

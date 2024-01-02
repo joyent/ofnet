@@ -21,8 +21,6 @@ import (
 	"sync"
 
 	"antrea.io/libOpenflow/openflow15"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Fgraph table element
@@ -51,6 +49,7 @@ func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
 	// modifications to flowdb requires a lock
 	self.lock.Lock()
 	defer self.lock.Unlock()
+	logger := self.Switch.logger
 
 	flow := new(Flow)
 	flow.Table = self
@@ -58,16 +57,16 @@ func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
 	flow.isInstalled = false
 	flow.flowActions = make([]*FlowAction, 0)
 
-	log.Debugf("Creating new flow for match: %+v", match)
+	logger.Debugf("Creating new flow for match: %+v", match)
 
 	// See if the flow already exists
 	flowKey := flow.flowKey()
 	if self.flowDb[flowKey] != nil {
-		log.Errorf("Flow %s already exists", flowKey)
+		logger.Errorf("Flow %s already exists", flowKey)
 		return nil, fmt.Errorf("Flow %s already exists", flowKey)
 	}
 
-	log.Debugf("Added flow: %s", flowKey)
+	logger.Debugf("Added flow: %s", flowKey)
 
 	// Save it in DB. We dont install the flow till its next graph elem is set
 	self.flowDb[flowKey] = flow
@@ -80,12 +79,13 @@ func (self *Table) DeleteFlow(flowKey string) error {
 	// modifications to flowdb requires a lock
 	self.lock.Lock()
 	defer self.lock.Unlock()
+	logger := self.Switch.logger
 
 	// first empty it and then delete it.
 	self.flowDb[flowKey] = nil
 	delete(self.flowDb, flowKey)
 
-	log.Debugf("Deleted flow: %s", flowKey)
+	logger.Debugf("Deleted flow: %s", flowKey)
 
 	return nil
 }

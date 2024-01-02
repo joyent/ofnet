@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"antrea.io/libOpenflow/openflow15"
-	log "github.com/sirupsen/logrus"
+	"antrea.io/ofnet/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,14 +41,20 @@ type OfActor struct {
 	pktInCount     int
 	tlvTableStatus *TLVTableStatus
 	tlvMapCh       chan struct{}
+
+	logger log.Logger
+}
+
+func (o *OfActor) GetLogger() log.Logger {
+	return o.logger
 }
 
 func (o *OfActor) PacketRcvd(sw *OFSwitch, packet *PacketIn) {
-	log.Printf("App: Received packet: %+v", packet.Data)
+	o.logger.Infof("App: Received packet: %+v", packet.Data)
 }
 
 func (o *OfActor) SwitchConnected(sw *OFSwitch) {
-	log.Printf("App: Switch connected: %v", sw.DPID())
+	o.logger.Infof("App: Switch connected: %v", sw.DPID())
 
 	// Store switch for later use
 	o.Switch = sw
@@ -61,12 +67,12 @@ func (o *OfActor) MultipartReply(sw *OFSwitch, rep *openflow15.MultipartReply) {
 }
 
 func (o *OfActor) SwitchDisconnected(sw *OFSwitch) {
-	log.Printf("App: Switch disconnected: %v", sw.DPID())
+	o.logger.Infof("App: Switch disconnected: %v", sw.DPID())
 	o.isSwitchConnected = false
 }
 
 func (o *OfActor) TLVMapReplyRcvd(sw *OFSwitch, tlvTableStatus *TLVTableStatus) {
-	log.Printf("App: Receive TLVMapTable reply: %s", tlvTableStatus)
+	o.logger.Infof("App: Receive TLVMapTable reply: %s", tlvTableStatus)
 	o.tlvTableStatus = tlvTableStatus
 	if o.tlvMapCh != nil {
 		close(o.tlvMapCh)
@@ -91,7 +97,7 @@ func runOfctlCmd(cmd, brName string) ([]byte, error) {
 	cmdStr := fmt.Sprintf("/usr/bin/ovs-ofctl -O OpenFlow15 %s %s", cmd, brName)
 	out, err := exec.Command("/bin/sh", "-c", cmdStr).Output()
 	if err != nil {
-		log.Errorf("error running ovs-ofctl %s %s. Error: %v", cmd, brName, err)
+		log.GetLogger().Errorf("error running ovs-ofctl %s %s. Error: %v", cmd, brName, err)
 		return nil, err
 	}
 
@@ -102,15 +108,15 @@ func runOfctlCmd(cmd, brName string) ([]byte, error) {
 func ofctlFlowDump(brName string) ([]string, error) {
 	flowDump, err := runOfctlCmd("dump-flows", brName)
 	if err != nil {
-		log.Errorf("Error running dump-flows on %s: %v", brName, err)
+		log.GetLogger().Errorf("Error running dump-flows on %s: %v", brName, err)
 		return nil, err
 	}
 
-	log.Infof("Flow dump: %s", flowDump)
+	log.GetLogger().Infof("Flow dump: %s", flowDump)
 	flowOutStr := string(flowDump)
 	flowDb := strings.Split(flowOutStr, "\n")[1:]
 
-	log.Infof("flowDb: %+v", flowDb)
+	log.GetLogger().Infof("flowDb: %+v", flowDb)
 
 	var flowList []string
 	for _, flow := range flowDb {
@@ -123,7 +129,7 @@ func ofctlFlowDump(brName string) ([]string, error) {
 		}
 	}
 
-	log.Infof("flowList: %+v", flowList)
+	log.GetLogger().Infof("flowList: %+v", flowList)
 
 	return flowList, nil
 }
@@ -133,7 +139,7 @@ func ofctlFlowMatch(flowList []string, tableId int, matchStr, actStr string) boo
 	mtStr := fmt.Sprintf("table=%d, %s ", tableId, matchStr)
 	aStr := fmt.Sprintf("actions=%s", actStr)
 	for _, flowEntry := range flowList {
-		log.Debugf("Looking for %s %s in %s", mtStr, aStr, flowEntry)
+		log.GetLogger().Debugf("Looking for %s %s in %s", mtStr, aStr, flowEntry)
 		if strings.Contains(flowEntry, mtStr) && strings.Contains(flowEntry, aStr) {
 			return true
 		}
@@ -147,7 +153,7 @@ func ofctlDumpFlowMatch(brName string, tableId int, matchStr, actStr string) boo
 	// dump flows
 	flowList, err := ofctlFlowDump(brName)
 	if err != nil {
-		log.Errorf("Error dumping flows: Err %v", err)
+		log.GetLogger().Errorf("Error dumping flows: Err %v", err)
 		return false
 	}
 
@@ -157,38 +163,42 @@ func ofctlDumpFlowMatch(brName string, tableId int, matchStr, actStr string) boo
 // Test if OVS switch connects successfully
 func TestMain(m *testing.M) {
 	var err error
+
+	logger := log.GetLogger()
+
 	//Create a controller
 	ofActor = new(OfActor)
+	ofActor.logger = logger
 	ctrler = NewController(ofActor)
 
 	// Create ovs bridge and connect clientMode Controller to it
-	ovsDriver = NewOvsDriver("ovsbr12")
+	ovsDriver = NewOvsDriver("ovsbr12", logger)
 	//wait for 2sec and see if ovs br created
-	log.Infof("wait for 2sec for ovs bridge ovsbr12 to get created..")
+	logger.Infof("wait for 2sec for ovs bridge ovsbr12 to get created..")
 	time.Sleep(2 * time.Second)
 	go ctrler.Connect("/var/run/openvswitch/ovsbr12.mgmt")
 
 	//wait for 8sec and see if switch connects
 	time.Sleep(8 * time.Second)
 	if !ofActor.isSwitchConnected {
-		log.Fatalf("ovsbr12 switch did not connect within 20sec")
+		logger.Fatalf("ovsbr12 switch did not connect within 20sec")
 	}
 
-	log.Infof("Switch connected. Creating tables..")
+	logger.Infof("Switch connected. Creating tables..")
 
 	// Create initial tables
 	ofActor.inputTable = ofActor.Switch.DefaultTable()
 	if ofActor.inputTable == nil {
-		log.Fatalf("Failed to get input Table")
+		logger.Fatalf("Failed to get input Table")
 		return
 	}
 
 	ofActor.nextTable, err = ofActor.Switch.NewTable(1)
 	if err != nil {
-		log.Fatalf("Error creating next Table: %v", err)
+		logger.Fatalf("Error creating next Table: %v", err)
 		return
 	}
-	log.Infof("Openflow tables created successfully")
+	logger.Infof("Openflow tables created successfully")
 
 	// run the test
 	exitCode := m.Run()
@@ -196,7 +206,7 @@ func TestMain(m *testing.M) {
 	// delete the bridge
 	err = ovsDriver.DeleteBridge(ovsDriver.OvsBridgeName)
 	if err != nil {
-		log.Fatalf("Error deleting the bridge: %v", err)
+		logger.Fatalf("Error deleting the bridge: %v", err)
 	}
 
 	os.Exit(exitCode)
@@ -205,8 +215,9 @@ func TestMain(m *testing.M) {
 // test create/delete Table
 func TestTableCreateDelete(t *testing.T) {
 	var tables [12]*Table
+	logger := log.GetLogger()
 
-	log.Infof("Creating tables..")
+	logger.Infof("Creating tables..")
 	// create the tables
 	for i := 2; i < 12; i++ {
 		var err error
@@ -214,7 +225,7 @@ func TestTableCreateDelete(t *testing.T) {
 		assert.NoErrorf(t, err, "Error creating table: %d", i)
 	}
 
-	log.Infof("Deleting tables..")
+	logger.Infof("Deleting tables..")
 
 	// delete the tables
 	for i := 2; i < 12; i++ {
@@ -684,7 +695,8 @@ func TestOFSwitch_DumpFlowStats(t *testing.T) {
 
 func TestMultiRangeOneReg(t *testing.T) {
 	brName := ovsDriver.OvsBridgeName
-	log.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
+	logger := log.GetLogger()
+	logger.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
 	ofActor.Switch.EnableMonitor()
 
 	srcMac1, _ := net.ParseMAC("11:11:11:11:11:11")
@@ -783,7 +795,9 @@ func (o *OfActor) RetryInterval() time.Duration {
 }
 
 func TestReconnectOFSwitch(t *testing.T) {
+	logger := log.GetLogger()
 	app := new(OfActor)
+	app.logger = logger
 	ctrl := NewController(app)
 	brName := "br4reconn"
 	ovsBr := prepareControllerAndSwitch(t, app, ctrl, brName)
@@ -799,7 +813,7 @@ func TestReconnectOFSwitch(t *testing.T) {
 		ovsBr.DeleteBridge(brName)
 		select {
 		case <-time.After(10 * time.Second):
-			ovsBr = NewOvsDriver(brName)
+			ovsBr = NewOvsDriver(brName, logger)
 		}
 	}()
 
@@ -812,8 +826,9 @@ func TestReconnectOFSwitch(t *testing.T) {
 }
 
 func prepareControllerAndSwitch(t *testing.T, app *OfActor, ctrl *Controller, brName string) (ovsBr *OvsDriver) {
+	logger := log.GetLogger()
 	// Create ovs bridge and connect clientMode Controller to it
-	ovsBr = NewOvsDriver(brName)
+	ovsBr = NewOvsDriver(brName, logger)
 	go ctrl.Connect(fmt.Sprintf("/var/run/openvswitch/%s.mgmt", brName))
 
 	time.Sleep(2 * time.Second)
@@ -1144,6 +1159,7 @@ func testNewFlowActionAPIsTest4(t *testing.T) {
 }
 
 func testNewFlowActionAPIsTest5(t *testing.T) {
+	logger := log.GetLogger()
 	brName := ovsDriver.OvsBridgeName
 
 	// Test action: conjunction
@@ -1174,7 +1190,7 @@ func testNewFlowActionAPIsTest5(t *testing.T) {
 		"conjunction flow match: %s, actions: %s not found in OVS", matchStr, actionStr)
 	flow5.MonitorRealizeStatus()
 	time.Sleep(1 * time.Second)
-	log.Info("Flow realize status is ", flow5.IsRealized())
+	logger.Info("Flow realize status is ", flow5.IsRealized())
 	flow5.ResetApplyActions([]OFAction{conjunction1})
 	err = flow5.Send(openflow15.FC_MODIFY)
 	require.NoError(t, err)
@@ -1431,8 +1447,9 @@ func testNewFlowActionAPIsTest12(t *testing.T) {
 }
 
 func TestNewFlowActionAPIs(t *testing.T) {
+	logger := log.GetLogger()
 	brName := ovsDriver.OvsBridgeName
-	log.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
+	logger.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
 	ofActor.Switch.EnableMonitor()
 
 	testNewFlowActionAPIsTest1(t)
@@ -1451,8 +1468,9 @@ func TestNewFlowActionAPIs(t *testing.T) {
 }
 
 func TestSetTunnelMetadata(t *testing.T) {
+	logger := log.GetLogger()
 	brName := ovsDriver.OvsBridgeName
-	log.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
+	logger.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
 	ofActor.Switch.EnableMonitor()
 
 	tlvMap := &openflow15.TLVTableMap{OptClass: 0xff01, OptType: 0, OptLength: 4, Index: 0}
@@ -1523,7 +1541,9 @@ func TestGetMaskBytes(t *testing.T) {
 }
 
 func TestModPort(t *testing.T) {
+	logger := log.GetLogger()
 	app := new(OfActor)
+	app.logger = logger
 	ctrl := NewController(app)
 	brName := "br4modPort"
 	ovsBr := prepareControllerAndSwitch(t, app, ctrl, brName)
@@ -1623,7 +1643,9 @@ func TestCtMatch(t *testing.T) {
 }
 
 func TestIPv6Flows(t *testing.T) {
+	logger := log.GetLogger()
 	app := new(OfActor)
+	app.logger = logger
 	ctrl := NewController(app)
 	brName := "br4IPv6"
 	ovsBr := prepareControllerAndSwitch(t, app, ctrl, brName)
@@ -1735,8 +1757,9 @@ func TestIPv6Flows(t *testing.T) {
 }
 
 func testNXExtensionNote(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
+	logger := log.GetLogger()
 	brName := ovsBr.OvsBridgeName
-	log.Infof("Enable monitor flows on Table %d in bridge %s", ofApp.inputTable.TableId, brName)
+	logger.Infof("Enable monitor flows on Table %d in bridge %s", ofApp.inputTable.TableId, brName)
 	ofApp.Switch.EnableMonitor()
 	srcMac1, _ := net.ParseMAC("33:33:11:11:11:11")
 	srcIP1 := net.ParseIP("192.168.1.10")
@@ -1755,8 +1778,9 @@ func testNXExtensionNote(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
 }
 
 func testNXExtensionLearn(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
+	logger := log.GetLogger()
 	brName := ovsBr.OvsBridgeName
-	log.Infof("Enable monitor flows on Table %d in bridge %s", ofApp.inputTable.TableId, brName)
+	logger.Infof("Enable monitor flows on Table %d in bridge %s", ofApp.inputTable.TableId, brName)
 	ofApp.Switch.EnableMonitor()
 	srcMac1, _ := net.ParseMAC("22:22:11:11:11:11")
 	srcIP1 := net.ParseIP("192.168.1.10")
@@ -1911,6 +1935,7 @@ func testNXExtensionsTest4(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
 }
 
 func testNXExtensionsTest5(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
+	logger := log.GetLogger()
 	// Test action: conjunction
 	brName := ovsBr.OvsBridgeName
 	inPort3 := uint32(5)
@@ -1933,7 +1958,7 @@ func testNXExtensionsTest5(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
 		"conjunction flow match: %s, actions: %s not found in OVS", matchStr, actionStr)
 	flow5.MonitorRealizeStatus()
 	time.Sleep(1 * time.Second)
-	log.Info("Flow realize status is ", flow5.IsRealized())
+	logger.Info("Flow realize status is ", flow5.IsRealized())
 
 	_ = flow5.DelConjunction(uint32(101))
 	actionStr = "conjunction(100,2/5)"
@@ -2177,8 +2202,9 @@ func testNXExtensionsTest13(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
 }
 
 func testNXExtensionsWithOFApplication(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
+	logger := log.GetLogger()
 	brName := ovsBr.OvsBridgeName
-	log.Infof("Enable monitor flows on table %d in bridge %s", ofApp.inputTable.TableId, brName)
+	logger.Infof("Enable monitor flows on table %d in bridge %s", ofApp.inputTable.TableId, brName)
 	ofApp.Switch.EnableMonitor()
 
 	testNXExtensionsTest1(ofApp, ovsBr, t)
@@ -2243,6 +2269,7 @@ func verifyFlowInstallAndDelete(t *testing.T, flow *Flow, nextElem FgraphElem, b
 }
 
 func verifyGroup(t *testing.T, br string, group *Group, groupType string, buckets string, properties string, expectExists bool) {
+	logger := log.GetLogger()
 	// dump groups
 	groupList, err := ofctlGroupDump(br)
 	assert.NoError(t, err, "Error dumping flows")
@@ -2253,7 +2280,7 @@ func verifyGroup(t *testing.T, br string, group *Group, groupType string, bucket
 	groupStr = fmt.Sprintf("%s,%s", groupStr, buckets)
 	found := false
 	for _, groupEntry := range groupList {
-		log.Debugf("Looking for %s in %s", groupStr, groupEntry)
+		logger.Debugf("Looking for %s in %s", groupStr, groupEntry)
 		if strings.Contains(groupEntry, groupStr) {
 			found = true
 			break
@@ -2264,25 +2291,27 @@ func verifyGroup(t *testing.T, br string, group *Group, groupType string, bucket
 
 // dump the groups and parse the Output
 func ofctlGroupDump(brName string) ([]string, error) {
+	logger := log.GetLogger()
 	groupDump, err := runOfctlCmd("dump-groups", brName)
 	if err != nil {
-		log.Errorf("Error running dump-groups on %s: %v", brName, err)
+		logger.Errorf("Error running dump-groups on %s: %v", brName, err)
 		return nil, err
 	}
 
-	log.Debugf("Group dump: %s", groupDump)
+	logger.Debugf("Group dump: %s", groupDump)
 	groupOutStr := string(groupDump)
 	groupDb := strings.Split(groupOutStr, "\n")[1:]
 
-	log.Debugf("groupList: %+v", groupDb)
+	logger.Debugf("groupList: %+v", groupDb)
 
 	return groupDb, nil
 }
 
 // Test flows using write_actions
 func TestWriteactionsFlows(t *testing.T) {
+	logger := log.GetLogger()
 	brName := ovsDriver.OvsBridgeName
-	log.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
+	logger.Infof("Enable monitor flows on table %d in bridge %s", ofActor.inputTable.TableId, brName)
 	ofActor.Switch.EnableMonitor()
 
 	// Test dnatTable flow using write_actions

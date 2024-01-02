@@ -28,7 +28,7 @@ import (
 	"antrea.io/libOpenflow/common"
 	"antrea.io/libOpenflow/openflow15"
 	"antrea.io/libOpenflow/util"
-	log "github.com/sirupsen/logrus"
+	"antrea.io/ofnet/log"
 )
 
 type PacketIn struct {
@@ -100,6 +100,8 @@ type AppInterface interface {
 	FlowGraphEnabledOnSwitch() bool
 
 	TLVMapEnabledOnSwitch() bool
+
+	GetLogger() log.Logger
 }
 
 type ConnectionRetryControl interface {
@@ -165,7 +167,7 @@ func (c *Controller) Listen(port string) error {
 
 	defer c.listener.Close()
 
-	log.Debugf("Listening for connections on %v", addr)
+	c.app.GetLogger().Debugf("Listening for connections on %v", addr)
 	for {
 		conn, err := c.listener.AcceptTCP()
 		if err != nil {
@@ -212,6 +214,7 @@ func (c *Controller) Connect(sock string) error {
 		retryInterval = retryController.RetryInterval()
 	}
 
+	logger := c.app.GetLogger()
 	for {
 		select {
 		case connCtrl := <-c.connCh:
@@ -219,7 +222,7 @@ func (c *Controller) Connect(sock string) error {
 			case InitConnection:
 				fallthrough
 			case ReConnection:
-				log.Infof("Initialize connection or re-connect to %s.", sock)
+				logger.Infof("Initialize connection or re-connect to %s.", sock)
 
 				if conn != nil {
 					// Try to close the existing connection
@@ -234,14 +237,14 @@ func (c *Controller) Connect(sock string) error {
 				}
 				maxRetry = 0
 				c.wg.Add(1)
-				log.Infof("Connected to socket %s", sock)
+				logger.Infof("Connected to socket %s", sock)
 
 				go c.handleConnection(conn)
 			case CompleteConnection:
 				continue
 			}
 		case <-c.exitCh:
-			log.Debug("Controller is delete")
+			logger.Debug("Controller is delete")
 			return nil
 		}
 	}
@@ -249,6 +252,7 @@ func (c *Controller) Connect(sock string) error {
 
 func (c *Controller) getConnection(address string, maxRetry int, retryInterval time.Duration) (net.Conn, error) {
 	var count int
+	logger := c.app.GetLogger()
 	for {
 		select {
 		case <-time.After(retryInterval):
@@ -265,9 +269,9 @@ func (c *Controller) getConnection(address string, maxRetry int, retryInterval t
 			if maxRetry > 0 && count == maxRetry {
 				return nil, err
 			}
-			log.Errorf("Failed to connect to %s, retry after %s: %v.", address, retryInterval.String(), err)
+			logger.Errorf("Failed to connect to %s, retry after %s: %v.", address, retryInterval.String(), err)
 		case <-c.exitCh:
-			log.Info("Controller is deleted, stop re-connections")
+			logger.Info("Controller is deleted, stop re-connections")
 			return nil, fmt.Errorf("controller is deleted, and connection is set as nil")
 		}
 	}
@@ -295,17 +299,18 @@ func (c *Controller) handleConnection(conn net.Conn) {
 	defer c.wg.Done()
 
 	stream := util.NewMessageStream(conn, c)
+	logger := c.app.GetLogger()
 
-	log.Infof("New connection: %v", conn.RemoteAddr())
+	logger.Infof("New connection: %v", conn.RemoteAddr())
 
 	// Send ofp 1.5 Hello by default
 	h, _ := common.NewHello(6)
 	if err := sendMessageWithTimeout(stream, h); err != nil {
-		log.Errorf("Failed to send HELLO message")
+		logger.Errorf("Failed to send HELLO message")
 		return
 	}
 
-	log.Debugf("Sent hello with OF version: %d", h.Version)
+	logger.Debugf("Sent hello with OF version: %d", h.Version)
 
 	for {
 		select {
@@ -317,27 +322,27 @@ func (c *Controller) handleConnection(conn net.Conn) {
 			// connection may be served without error.
 			case *common.Hello:
 				if m.Version == openflow15.VERSION {
-					log.Debugf("Received Openflow 1.5 Hello message")
+					logger.Debugf("Received Openflow 1.5 Hello message")
 					// Version negotiation is
 					// considered complete. Create
 					// new Switch and notify listening
 					// applications.
 					stream.Version = m.Version
 					if err := sendMessageWithTimeout(stream, openflow15.NewFeaturesRequest()); err != nil {
-						log.Errorf("Failed to send FeatureRequest message")
+						logger.Errorf("Failed to send FeatureRequest message")
 						return
 					}
 				} else {
 					// Connection should be severed if controller
 					// doesn't support switch version.
-					log.Debugf("Received unsupported ofp version %v", m.Version)
+					logger.Debugf("Received unsupported ofp version %v", m.Version)
 					stream.Shutdown <- true
 				}
 			// After a vaild FeaturesReply has been received we
 			// have all the information we need. Create a new
 			// switch object and notify applications.
 			case *openflow15.SwitchFeatures:
-				log.Debugf("Received ofp1.5 Switch feature response: %+v", *m)
+				logger.Debugf("Received ofp1.5 Switch feature response: %+v", *m)
 
 				// Create a new switch and handover the stream
 				var reConnChan chan int = nil
@@ -346,7 +351,7 @@ func (c *Controller) handleConnection(conn net.Conn) {
 				}
 				s := NewSwitch(stream, m.DPID, c.app, reConnChan, c.id)
 				if err := s.switchConnected(); err != nil {
-					log.Errorf("Failed to initialize OpenFlow switch %s: %v", m.DPID, err)
+					logger.Errorf("Failed to initialize OpenFlow switch %s: %v", m.DPID, err)
 					// Do not send event "ReConnection" in "switchDisconnected", because the event is sent in
 					// defer logic in "handleConnection".
 					s.switchDisconnected(false)
@@ -359,19 +364,19 @@ func (c *Controller) handleConnection(conn net.Conn) {
 			// An error message may indicate a version mismatch. We
 			// disconnect if an error occurs this early.
 			case *openflow15.ErrorMsg:
-				log.Warnf("Received OpenFlow error msg: %+v", *m)
+				logger.Warnf("Received OpenFlow error msg: %+v", *m)
 				stream.Shutdown <- true
 				return
 			}
 		case err := <-stream.Error:
 			// The connection has been shutdown.
-			log.Debugf("%v", err)
+			logger.Debugf("%v", err)
 			return
 		case <-time.After(heartbeatInterval):
 			// This shouldn't happen. If it does, both the controller
 			// and switch are no longer communicating. The TCPConn is
 			// still established though.
-			log.Warnf("Connection timed out: %d", heartbeatInterval)
+			logger.Warnf("Connection timed out: %d", heartbeatInterval)
 			return
 		}
 	}
@@ -383,7 +388,7 @@ func (c *Controller) Parse(b []byte) (message util.Message, err error) {
 	case openflow15.VERSION:
 		message, err = openflow15.Parse(b)
 	default:
-		log.Errorf("Received unsupported OpenFlow version: %d", b[0])
+		c.app.GetLogger().Errorf("Received unsupported OpenFlow version: %d", b[0])
 	}
 	return
 }

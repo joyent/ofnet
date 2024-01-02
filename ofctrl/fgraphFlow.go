@@ -26,7 +26,7 @@ import (
 
 	"antrea.io/libOpenflow/openflow15"
 	"antrea.io/libOpenflow/util"
-	log "github.com/sirupsen/logrus"
+	"antrea.io/ofnet/log"
 )
 
 // Small subset of openflow fields we currently support
@@ -191,7 +191,7 @@ type FlowBundleMessage struct {
 
 func (m *FlowBundleMessage) resetXid(xid uint32) util.Message {
 	m.message.Xid = xid
-	log.Debugf("resetXid xid: %x", m.message.Xid)
+	log.GetLogger().Debugf("resetXid xid: %x", m.message.Xid)
 	return m.message
 }
 
@@ -208,7 +208,7 @@ func (m *FlowBundleMessage) GetMessage() util.Message {
 func (self *Flow) flowKey() string {
 	jsonVal, err := json.Marshal(self.Match)
 	if err != nil {
-		log.Errorf("Error forming flowkey for %+v. Err: %v", self, err)
+		self.Table.Switch.logger.Errorf("Error forming flowkey for %+v. Err: %v", self, err)
 		return ""
 	}
 
@@ -222,7 +222,7 @@ func (self *Flow) Type() string {
 
 // instruction set for flow element
 func (self *Flow) GetFlowInstr() openflow15.Instruction {
-	log.Fatalf("Unexpected call to get flow's instruction set")
+	self.Table.Switch.logger.Fatalf("Unexpected call to get flow's instruction set")
 	return nil
 }
 
@@ -754,6 +754,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 	var actInstr openflow15.Instruction
 	var addActn bool = false
 	var err error
+	logger := self.Table.Switch.logger
 
 	// Create a apply_action instruction to be used if its not already created
 	switch instr.(type) {
@@ -787,7 +788,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added pushvlan action: %+v, setVlan Actions: %+v",
+			logger.Debugf("flow install. Added pushvlan action: %+v, setVlan Actions: %+v",
 				pushVlanAction, setVlanAction)
 
 		case ActTypePopVlan:
@@ -801,7 +802,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added popVlan action: %+v", popVlan)
+			logger.Debugf("flow install. Added popVlan action: %+v", popVlan)
 
 		case ActTypePushMpls:
 			// Create push mpls action
@@ -814,7 +815,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added pushMpls action: %+v", pushMpls)
+			logger.Debugf("flow install. Added pushMpls action: %+v", pushMpls)
 
 		case ActTypePopMpls:
 			// Create pop mpls action
@@ -827,7 +828,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added popMpls action: %+v", popMpls)
+			logger.Debugf("flow install. Added popMpls action: %+v", popMpls)
 
 		case ActTypeSetDstMac:
 			// Set Outer MacDA field
@@ -841,7 +842,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setMacDa action: %+v", setMacDaAction)
+			logger.Debugf("flow install. Added setMacDa action: %+v", setMacDaAction)
 
 		case ActTypeSetSrcMac:
 			// Set Outer MacSA field
@@ -855,7 +856,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setMacSa Action: %+v", setMacSaAction)
+			logger.Debugf("flow install. Added setMacSa Action: %+v", setMacSaAction)
 
 		case ActTypeSetTunnelID:
 			// Set tunnelId field
@@ -869,7 +870,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setTunnelId Action: %+v", setTunnelAction)
+			logger.Debugf("flow install. Added setTunnelId Action: %+v", setTunnelAction)
 
 		case "setMetadata":
 			// Set Metadata instruction
@@ -890,7 +891,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setIPSa Action: %+v", setIPSaAction)
+			logger.Debugf("flow install. Added setIPSa Action: %+v", setIPSaAction)
 
 		case ActTypeSetDstIP:
 			// Set IP dst
@@ -904,7 +905,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setIPDa Action: %+v", setIPDaAction)
+			logger.Debugf("flow install. Added setIPDa Action: %+v", setIPDaAction)
 
 		case ActTypeSetTunnelSrcIP:
 			// Set tunnel src addr field
@@ -918,7 +919,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setTunSa Action: %+v", setTunnelSrcAction)
+			logger.Debugf("flow action: Added setTunSa Action: %+v", setTunnelSrcAction)
 
 		case ActTypeSetTunnelDstIP:
 			// Set tunnel dst addr field
@@ -932,7 +933,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setTunDa Action: %+v", setTunnelAction)
+			logger.Debugf("flow action: Added setTunDa Action: %+v", setTunnelAction)
 
 		case ActTypeSetDSCP:
 			// Set DSCP field
@@ -946,7 +947,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setDscp Action: %+v", setIPDscpAction)
+			logger.Debugf("flow install. Added setDscp Action: %+v", setIPDscpAction)
 
 		case ActTypeSetARPOper:
 			// Set ARP operation type field
@@ -960,7 +961,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setArpOper Action: %+v", setARPOpAction)
+			logger.Debugf("flow action: Added setArpOper Action: %+v", setARPOpAction)
 
 		case ActTypeSetARPSHA:
 			// Set ARP_SHA field
@@ -974,7 +975,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setARPSha Action: %+v", setARPShaAction)
+			logger.Debugf("flow action: Added setARPSha Action: %+v", setARPShaAction)
 
 		case ActTypeSetARPTHA:
 			// Set ARP_THA field
@@ -988,7 +989,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setARPTha Action: %+v", setARPThaAction)
+			logger.Debugf("flow action: Added setARPTha Action: %+v", setARPThaAction)
 
 		case ActTypeSetARPSPA:
 			// Set ARP_SPA field
@@ -1002,7 +1003,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setARPSpa Action: %+v", setARPSpaAction)
+			logger.Debugf("flow action: Added setARPSpa Action: %+v", setARPSpaAction)
 		case ActTypeSetARPTPA:
 			// Set ARP_TPA field
 			arpTpaField := openflow15.NewArpTpaField(flowAction.ipAddr)
@@ -1015,7 +1016,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setARPTpa Action: %+v", setARPTpaAction)
+			logger.Debugf("flow action: Added setARPTpa Action: %+v", setARPTpaAction)
 		case ActTypeSetTCPsPort:
 			// Set TCP src
 			tcpSrcField := openflow15.NewTcpSrcField(flowAction.l4Port)
@@ -1028,7 +1029,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setTCPSrc Action: %+v", setTCPSrcAction)
+			logger.Debugf("flow install. Added setTCPSrc Action: %+v", setTCPSrcAction)
 
 		case ActTypeSetTCPdPort:
 			// Set TCP dst
@@ -1042,7 +1043,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setTCPDst Action: %+v", setTCPDstAction)
+			logger.Debugf("flow install. Added setTCPDst Action: %+v", setTCPDstAction)
 
 		case ActTypeSetUDPsPort:
 			// Set UDP src
@@ -1056,7 +1057,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setUDPSrc Action: %+v", setUDPSrcAction)
+			logger.Debugf("flow install. Added setUDPSrc Action: %+v", setUDPSrcAction)
 
 		case ActTypeSetUDPdPort:
 			// Set UDP dst
@@ -1070,7 +1071,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow install. Added setUDPDst Action: %+v", setUDPDstAction)
+			logger.Debugf("flow install. Added setUDPDst Action: %+v", setUDPDstAction)
 		case ActTypeSetSCTPsPort:
 			// Set SCTP src
 			sctpSrcField := openflow15.NewSctpSrcField(flowAction.l4Port)
@@ -1083,7 +1084,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setSCTPSrc Action: %+v", setSCTPSrcAction)
+			logger.Debugf("flow action: Added setSCTPSrc Action: %+v", setSCTPSrcAction)
 
 		case ActTypeSetSCTPdPort:
 			// Set SCTP dst
@@ -1097,7 +1098,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setSCTPSrc Action: %+v", setSCTPDstAction)
+			logger.Debugf("flow action: Added setSCTPSrc Action: %+v", setSCTPDstAction)
 
 		case ActTypeNXLoad:
 			// Create NX load action
@@ -1111,7 +1112,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added loadReg Action: %+v", loadRegAction)
+			logger.Debugf("flow action: Added loadReg Action: %+v", loadRegAction)
 
 		case ActTypeSetField:
 			setFieldAct := flowAction.setFieldAct
@@ -1124,7 +1125,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added setField Action: %+v", setFieldAction)
+			logger.Debugf("flow action: Added setField Action: %+v", setFieldAction)
 
 		case ActTypeCopyField:
 			copyFieldAct := flowAction.copyFieldAct
@@ -1137,7 +1138,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added copyField Action: %+v", copyFieldActMsg)
+			logger.Debugf("flow action: Added copyField Action: %+v", copyFieldActMsg)
 
 		case ActTypeNXMove:
 			// Create NX move action
@@ -1150,7 +1151,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added moveReg Action: %+v", moveRegAction)
+			logger.Debugf("flow action: Added moveReg Action: %+v", moveRegAction)
 
 		case ActTypeNXCT:
 			ctAction := flowAction.connTrack.GetActionMessage()
@@ -1162,7 +1163,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added ct Action: %+v", ctAction)
+			logger.Debugf("flow action: Added ct Action: %+v", ctAction)
 
 		case ActTypeNXConjunction:
 			// Create NX conjunction action
@@ -1175,7 +1176,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added conjunction Action: %+v", conjAction)
+			logger.Debugf("flow action: Added conjunction Action: %+v", conjAction)
 
 		case ActTypeDecTTL:
 			decTtlAction := openflow15.NewActionDecNwTtl()
@@ -1186,7 +1187,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added decTTL Action: %+v", decTtlAction)
+			logger.Debugf("flow action: Added decTTL Action: %+v", decTtlAction)
 		case ActTypeNXResubmit:
 			resubmitAction := flowAction.resubmit
 			// Add resubmit action to the instruction
@@ -1196,7 +1197,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added resubmit Action: %+v", resubmitAction)
+			logger.Debugf("flow action: Added resubmit Action: %+v", resubmitAction)
 		case ActTypeNXLearn:
 			learnAction := flowAction.learn
 			// Add learn action to the instruction
@@ -1206,7 +1207,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added learn Action: %+v", learnAction)
+			logger.Debugf("flow action: Added learn Action: %+v", learnAction)
 		case ActTypeNXNote:
 			notes := flowAction.notes
 			noteAction := openflow15.NewNXActionNote()
@@ -1218,7 +1219,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added note Action: %+v", noteAction)
+			logger.Debugf("flow action: Added note Action: %+v", noteAction)
 		case ActTypeNXOutput:
 			nxOutput := flowAction.nxOutput
 			// Add NXOutput action to the instruction
@@ -1228,7 +1229,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 			}
 			addActn = true
 
-			log.Debugf("flow action: Added nxOutput Action: %+v", nxOutput)
+			logger.Debugf("flow action: Added nxOutput Action: %+v", nxOutput)
 		case ActTypeController:
 			act := flowAction.controller
 			err = actInstr.AddAction(act.GetActionMessage(), true)
@@ -1236,9 +1237,9 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 				return err
 			}
 			addActn = true
-			log.Debugf("flow action: Added controller Action: %+v", act)
+			logger.Debugf("flow action: Added controller Action: %+v", act)
 		default:
-			log.Fatalf("Unknown action type %s", flowAction.ActionType)
+			logger.Fatalf("Unknown action type %s", flowAction.ActionType)
 			return UnknownActionTypeError
 		}
 	}
@@ -1254,6 +1255,7 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 
 // GenerateFlowModMessage translates the Flow a FlowMod message according to the commandType.
 func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.FlowMod, err error) {
+	logger := self.Table.Switch.logger
 	// Create a flowmode entry
 	flowMod = openflow15.NewFlowMod()
 	flowMod.TableId = self.Table.TableId
@@ -1277,7 +1279,7 @@ func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.F
 
 	// convert match fields to openflow 1.5 format
 	flowMod.Match = self.xlateMatch()
-	log.Debugf("flow install: Match: %+v", flowMod.Match)
+	logger.Debugf("flow install: Match: %+v", flowMod.Match)
 	if commandType != openflow15.FC_DELETE && commandType != openflow15.FC_DELETE_STRICT {
 
 		// Based on the next elem, decide what to install
@@ -1295,7 +1297,7 @@ func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.F
 			// Add the instruction to flowmod
 			flowMod.AddInstruction(instr)
 
-			log.Debugf("flow install: added goto table instr: %+v", instr)
+			logger.Debugf("flow install: added goto table instr: %+v", instr)
 
 		case "flood":
 			fallthrough
@@ -1315,7 +1317,7 @@ func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.F
 
 				flowMod.AddInstruction(instr)
 
-				log.Debugf("flow install: added next instr: %+v", instr)
+				logger.Debugf("flow install: added next instr: %+v", instr)
 			}
 		case "group":
 			fallthrough
@@ -1335,7 +1337,7 @@ func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.F
 
 				flowMod.AddInstruction(instr)
 
-				log.Debugf("flow install: added next instr: %+v", instr)
+				logger.Debugf("flow install: added next instr: %+v", instr)
 			}
 		case "empty":
 			// Get the instruction set from the element. This instruction is InstrActions with no actions
@@ -1351,11 +1353,11 @@ func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.F
 					flowMod.AddInstruction(instr)
 				}
 
-				log.Debugf("flow install: added next instr: %+v", instr)
+				logger.Debugf("flow install: added next instr: %+v", instr)
 			}
 
 		default:
-			log.Fatalf("Unknown Fgraph element type %s", self.NextElem.Type())
+			logger.Fatalf("Unknown Fgraph element type %s", self.NextElem.Type())
 			err = UnknownElementTypeError
 			return
 		}
@@ -1365,6 +1367,7 @@ func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.F
 
 // Install a flow entry
 func (self *Flow) install() error {
+	logger := self.Table.Switch.logger
 	command := openflow15.FC_MODIFY_STRICT
 	// Add or modify
 	if !self.isInstalled {
@@ -1374,7 +1377,7 @@ func (self *Flow) install() error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("Sending flowmod: %+v", flowMod)
+	logger.Debugf("Sending flowmod: %+v", flowMod)
 
 	// Send the message
 	if err := self.Table.Switch.Send(flowMod); err != nil {
@@ -2062,6 +2065,7 @@ func (self *Flow) Controller(reason uint8) error {
 func (self *Flow) Delete() error {
 	self.lock.Lock()
 	defer self.lock.Unlock()
+	logger := self.Table.Switch.logger
 
 	// Delete from ofswitch
 	if self.isInstalled {
@@ -2080,7 +2084,7 @@ func (self *Flow) Delete() error {
 		flowMod.OutGroup = openflow15.OFPG_ANY
 		flowMod.Match = self.xlateMatch()
 
-		log.Debugf("Sending DELETE flowmod: %+v", flowMod)
+		logger.Debugf("Sending DELETE flowmod: %+v", flowMod)
 
 		// Send the message
 		if err := self.Table.Switch.Send(flowMod); err != nil {
@@ -2180,6 +2184,7 @@ func (self *Flow) Drop() {
 }
 
 func (self *Flow) generateFlowMessage(commandType int) (flowMod *openflow15.FlowMod, err error) {
+	logger := self.Table.Switch.logger
 	flowMod = openflow15.NewFlowMod()
 	flowMod.TableId = self.Table.TableId
 	flowMod.Priority = self.Match.Priority
@@ -2202,7 +2207,7 @@ func (self *Flow) generateFlowMessage(commandType int) (flowMod *openflow15.Flow
 
 	// convert match fields to openflow 1.5 format
 	flowMod.Match = self.xlateMatch()
-	log.Debugf("flow install: Match: %+v", flowMod.Match)
+	logger.Debugf("flow install: Match: %+v", flowMod.Match)
 	if commandType != openflow15.FC_DELETE && commandType != openflow15.FC_DELETE_STRICT {
 		if self.metadata != nil {
 			writeMdInstruction := openflow15.NewInstrWriteMetadata(self.metadata.data, self.metadata.mask)

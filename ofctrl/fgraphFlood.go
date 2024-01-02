@@ -20,8 +20,6 @@ import (
 	"errors"
 
 	"antrea.io/libOpenflow/openflow15"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Flood Fgraph element
@@ -99,6 +97,7 @@ func (self *Flood) NumOutput() int {
 func (self *Flood) install() error {
 	groupMod := openflow15.NewGroupMod()
 	groupMod.GroupId = self.GroupId
+	logger := self.Switch.logger
 
 	// Change the OP to modify if it was already installed
 	if self.isInstalled {
@@ -135,7 +134,7 @@ func (self *Flood) install() error {
 		}
 	}
 
-	log.Debugf("Installing Group entry: %+v", groupMod)
+	logger.Debugf("Installing Group entry: %+v", groupMod)
 
 	// Send it to the switch
 	if err := self.Switch.Send(groupMod); err != nil {
@@ -150,13 +149,14 @@ func (self *Flood) install() error {
 
 // Delete a flood list
 func (self *Flood) Delete() error {
+	logger := self.Switch.logger
 	// Remove it from OVS if its installed
 	if self.isInstalled {
 		groupMod := openflow15.NewGroupMod()
 		groupMod.GroupId = self.GroupId
 		groupMod.Command = openflow15.OFPGC_DELETE
 
-		log.Debugf("Deleting Group entry: %+v", groupMod)
+		logger.Debugf("Deleting Group entry: %+v", groupMod)
 
 		// Send it to the switch
 		if err := self.Switch.Send(groupMod); err != nil {

@@ -141,7 +141,7 @@ func NewController(app AppInterface) *Controller {
 	c.id = uint16(rand.Uint32()) // #nosec G404: random number generator not used for security purposes
 
 	// for debug logs
-	// log.SetLevel(log.DebugLevel)
+	//log.SetLevel(log.DebugLevel)
 
 	// Save the handler
 	c.app = app
@@ -154,31 +154,31 @@ func (c *Controller) Application() AppInterface {
 }
 
 // Listen on a port
-func (c *Controller) Listen(port string) {
+func (c *Controller) Listen(port string) error {
 	addr, _ := net.ResolveTCPAddr("tcp", port)
 
 	var err error
 	c.listener, err = net.ListenTCP("tcp", addr)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	defer c.listener.Close()
 
-	log.Println("Listening for connections on", addr)
+	log.Debugf("Listening for connections on %v", addr)
 	for {
 		conn, err := c.listener.AcceptTCP()
 		if err != nil {
 			if strings.Contains(err.Error(), "use of closed network connection") {
-				return
+				return err
 			}
-			log.Fatal(err)
+
+			return err
 		}
 
 		c.wg.Add(1)
 		go c.handleConnection(conn)
 	}
-
 }
 
 // Linux: Connect to Unix Domain Socket file
@@ -234,14 +234,14 @@ func (c *Controller) Connect(sock string) error {
 				}
 				maxRetry = 0
 				c.wg.Add(1)
-				log.Printf("Connected to socket %s", sock)
+				log.Infof("Connected to socket %s", sock)
 
 				go c.handleConnection(conn)
 			case CompleteConnection:
 				continue
 			}
 		case <-c.exitCh:
-			log.Println("Controller is delete")
+			log.Debug("Controller is delete")
 			return nil
 		}
 	}
@@ -296,7 +296,7 @@ func (c *Controller) handleConnection(conn net.Conn) {
 
 	stream := util.NewMessageStream(conn, c)
 
-	log.Println("New connection..")
+	log.Infof("New connection: %v", conn.RemoteAddr())
 
 	// Send ofp 1.5 Hello by default
 	h, _ := common.NewHello(6)
@@ -304,7 +304,8 @@ func (c *Controller) handleConnection(conn net.Conn) {
 		log.Errorf("Failed to send HELLO message")
 		return
 	}
-	log.Printf("Sent hello with OF version: %d", h.Version)
+
+	log.Debugf("Sent hello with OF version: %d", h.Version)
 
 	for {
 		select {
@@ -316,7 +317,7 @@ func (c *Controller) handleConnection(conn net.Conn) {
 			// connection may be served without error.
 			case *common.Hello:
 				if m.Version == openflow15.VERSION {
-					log.Infoln("Received Openflow 1.5 Hello message")
+					log.Debugf("Received Openflow 1.5 Hello message")
 					// Version negotiation is
 					// considered complete. Create
 					// new Switch and notify listening
@@ -329,14 +330,14 @@ func (c *Controller) handleConnection(conn net.Conn) {
 				} else {
 					// Connection should be severed if controller
 					// doesn't support switch version.
-					log.Println("Received unsupported ofp version", m.Version)
+					log.Debugf("Received unsupported ofp version %v", m.Version)
 					stream.Shutdown <- true
 				}
 			// After a vaild FeaturesReply has been received we
 			// have all the information we need. Create a new
 			// switch object and notify applications.
 			case *openflow15.SwitchFeatures:
-				log.Printf("Received ofp1.5 Switch feature response: %+v", *m)
+				log.Debugf("Received ofp1.5 Switch feature response: %+v", *m)
 
 				// Create a new switch and handover the stream
 				var reConnChan chan int = nil
@@ -364,13 +365,13 @@ func (c *Controller) handleConnection(conn net.Conn) {
 			}
 		case err := <-stream.Error:
 			// The connection has been shutdown.
-			log.Println(err)
+			log.Debugf("%v", err)
 			return
 		case <-time.After(heartbeatInterval):
 			// This shouldn't happen. If it does, both the controller
 			// and switch are no longer communicating. The TCPConn is
 			// still established though.
-			log.Warnln("Connection timed out.")
+			log.Warnf("Connection timed out: %d", heartbeatInterval)
 			return
 		}
 	}

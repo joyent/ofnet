@@ -27,8 +27,8 @@ import (
 	"antrea.io/libOpenflow/openflow15"
 	"antrea.io/libOpenflow/protocol"
 	"antrea.io/libOpenflow/util"
+	"antrea.io/ofnet/log"
 	cmap "github.com/orcaman/concurrent-map/v2"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -41,6 +41,7 @@ var (
 )
 
 type OFSwitch struct {
+	logger log.Logger
 	stream *util.MessageStream
 	dpid   net.HardwareAddr
 	app    AppInterface
@@ -80,12 +81,14 @@ var (
 // Builds and populates a Switch struct then starts listening
 // for OpenFlow messages on conn.
 func NewSwitch(stream *util.MessageStream, dpid net.HardwareAddr, app AppInterface, connCh chan int, ctrlID uint16) *OFSwitch {
+	logger := app.GetLogger()
 	s := getSwitch(dpid)
 	if s == nil {
-		log.Infoln("Openflow Connection for new switch:", dpid)
+		logger.Infof("Openflow Connection for new switch: %v", dpid)
 
 		s = new(OFSwitch)
 		s.app = app
+		s.logger = logger
 		s.stream = stream
 		s.dpid = dpid
 		s.connCh = connCh
@@ -101,7 +104,7 @@ func NewSwitch(stream *util.MessageStream, dpid net.HardwareAddr, app AppInterfa
 		switchDb.Set(dpid.String(), s)
 
 	} else {
-		log.Infoln("Openflow re-connection for switch:", dpid)
+		logger.Infof("Openflow re-connection for switch: %v", dpid)
 		s.stream = stream
 		s.dpid = dpid
 	}
@@ -168,28 +171,28 @@ func (self *OFSwitch) switchConnected() error {
 			select {
 			case <-timer.C:
 				if err := self.Send(openflow15.NewEchoRequest()); err != nil {
-					log.Errorf("Failed to send echo request, and retry after %s: %v", heartbeatInterval.String(), err)
+					self.logger.Errorf("Failed to send echo request, and retry after %s: %v", heartbeatInterval.String(), err)
 				}
 			case <-self.ctx.Done():
-				log.Infof("Canceling sending echo request on the connection because switch is diconnected")
+				self.logger.Infof("Canceling sending echo request on the connection because switch is diconnected")
 				return
 			}
 		}
 	}()
 	if err := self.requestTlvMap(); err != nil {
-		log.Errorf("Failed to query tlv-map configurations on the OpenFlow switch: %v", err)
+		self.logger.Errorf("Failed to query tlv-map configurations on the OpenFlow switch: %v", err)
 		return err
 	}
 	// Send SwitchConfig message.
 	swConfig := openflow15.NewSetConfig()
 	swConfig.MissSendLen = 128
 	if err := self.Send(swConfig); err != nil {
-		log.Errorf("Failed to set switch config: %v", err)
+		self.logger.Errorf("Failed to set switch config: %v", err)
 		return err
 	}
 	// Set controller ID on the Switch.
 	if err := self.Send(openflow15.NewSetControllerID(self.ctrlID)); err != nil {
-		log.Errorf("Failed to set controller ID: %v", err)
+		self.logger.Errorf("Failed to set controller ID: %v", err)
 		return err
 	}
 	self.changeStatus(true)
@@ -217,7 +220,7 @@ func (self *OFSwitch) receive() {
 			// stream.
 			self.handleMessages(self.dpid, msg)
 		case err := <-self.stream.Error:
-			log.Warnf("Received ERROR message from switch %v. Err: %v", self.dpid, err)
+			self.logger.Warnf("Received ERROR message from switch %v. Err: %v", self.dpid, err)
 
 			// send Switch disconnected callback
 			self.switchDisconnected(true)
@@ -228,7 +231,7 @@ func (self *OFSwitch) receive() {
 
 // Handle openflow messages from the switch
 func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
-	log.Debugf("Received message: %+v, on switch: %s", msg, dpid.String())
+	self.logger.Debugf("Received message: %+v, on switch: %s", msg, dpid.String())
 
 	switch t := msg.(type) {
 	case *common.Header:
@@ -237,13 +240,13 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 			// Send Hello response
 			h, _ := common.NewHello(6)
 			if err := self.Send(h); err != nil {
-				log.Errorf("Error sending hello message")
+				self.logger.Errorf("Error sending hello message")
 			}
 		case openflow15.Type_EchoRequest:
 			// Send echo reply
 			res := openflow15.NewEchoReply()
 			if err := self.Send(res); err != nil {
-				log.Errorf("Failed to send echo reply: %v", err)
+				self.logger.Errorf("Failed to send echo reply: %v", err)
 			}
 
 		case openflow15.Type_EchoReply:
@@ -262,7 +265,7 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 		// Get the original message type from the error message data field.
 		errMsg := GetErrorMessage(t.Type, t.Code, 0)
 		msgType := GetErrorMessageType(t.Data)
-		log.Errorf("Received OpenFlow1.5 error: %s on message %s", errMsg, msgType)
+		self.logger.Errorf("Received OpenFlow1.5 error: %s on message %s", errMsg, msgType)
 		result := MessageResult{
 			succeed: false,
 			errType: t.Type,
@@ -278,7 +281,7 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 			tid = binary.BigEndian.Uint32(errData[8:12])
 		case openflow15.Type_BundleAddMessage:
 			result.msgType = BundleAddMessage
-			log.Debugf("handleMessages: Type_BundleAddMessage: Data Bytes(%d): %v", len(t.Data.Bytes()), t.Data.Bytes())
+			self.logger.Debugf("handleMessages: Type_BundleAddMessage: Data Bytes(%d): %v", len(t.Data.Bytes()), t.Data.Bytes())
 			tid = binary.BigEndian.Uint32(errData[8:12])
 		default:
 			tid = t.Xid
@@ -287,7 +290,7 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 		self.publishMessage(tid, result)
 
 	case *openflow15.VendorHeader:
-		log.Debugf("Received Experimenter message, VendorType: %d, ExperimenterType: %d, VendorData: %+v", t.Vendor, t.ExperimenterType, t.VendorData)
+		self.logger.Debugf("Received Experimenter message, VendorType: %d, ExperimenterType: %d, VendorData: %+v", t.Vendor, t.ExperimenterType, t.VendorData)
 		switch t.ExperimenterType {
 		case openflow15.Type_TlvTableReply:
 			reply := t.VendorData.(*openflow15.TLVTableReply)
@@ -317,7 +320,7 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 
 		}
 	case *openflow15.PacketIn:
-		log.Debugf("Received packet(ofctrl): %+v", t)
+		self.logger.Debugf("Received packet(ofctrl): %+v", t)
 		// send packet rcvd callback
 		pktIn := &PacketIn{PacketIn: t}
 		self.app.PacketRcvd(self, pktIn)
@@ -335,7 +338,7 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 	case *openflow15.MultipartRequest:
 
 	case *openflow15.MultipartReply:
-		log.Debugf("Received MultipartReply")
+		self.logger.Debugf("Received MultipartReply")
 		switch t.Type {
 		case openflow15.MultipartType_FlowDesc:
 			key := fmt.Sprintf("%d", t.Xid)
@@ -368,15 +371,15 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 				bundleID := binary.BigEndian.Uint32(errData[16:20])
 				result.msgType = BundleControlMessage
 				self.publishMessage(bundleID, result)
-				log.Errorf("Received Vendor error: %s on ONFT_BUNDLE_CONTROL message", errMsg)
+				self.logger.Errorf("Received Vendor error: %s on ONFT_BUNDLE_CONTROL message", errMsg)
 			case openflow15.Type_BundleAdd:
 				bundleID := binary.BigEndian.Uint32(errData[16:20])
 				result.msgType = BundleAddMessage
 				self.publishMessage(bundleID, result)
-				log.Errorf("Received Vendor error: %s on ONFT_BUNDLE_ADD_MESSAGE message", errMsg)
+				self.logger.Errorf("Received Vendor error: %s on ONFT_BUNDLE_ADD_MESSAGE message", errMsg)
 			}
 		default:
-			log.Errorf("Received Vendor error: %s", errMsg)
+			self.logger.Errorf("Received Vendor error: %s", errMsg)
 		}
 	}
 }
@@ -402,7 +405,7 @@ func (self *OFSwitch) EnableMonitor() {
 		for {
 			mp := <-self.mQueue
 			self.Send(mp)
-			log.Debugf("Send flow stats request")
+			self.logger.Debugf("Send flow stats request")
 		}
 	}()
 	self.monitorEnabled = true
@@ -412,7 +415,7 @@ func (self *OFSwitch) DumpFlowStats(cookieID uint64, cookieMask *uint64, flowMat
 	mp := self.getMPReq()
 	replyChan := make(chan *openflow15.MultipartReply)
 	go func() {
-		log.Debug("Add flow into monitor queue")
+		self.logger.Debug("Add flow into monitor queue")
 		flowMonitorReq := openflow15.NewFlowStatsRequest()
 		if tableID != nil {
 			flowMonitorReq.TableId = *tableID

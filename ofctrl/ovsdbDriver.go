@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"antrea.io/ofnet/log"
 	"github.com/contiv/libovsdb"
-	log "github.com/sirupsen/logrus"
 )
 
 // OVS driver state
@@ -24,16 +24,23 @@ type OvsDriver struct {
 
 	// read/write lock for accessing the cache
 	lock sync.RWMutex
+
+	logger log.Logger
 }
 
 // Create a new OVS driver
-func NewOvsDriver(bridgeName string) *OvsDriver {
+func NewOvsDriver(bridgeName string, logger log.Logger) *OvsDriver {
 	ovsDriver := new(OvsDriver)
+	if logger == nil {
+		ovsDriver.logger = log.GetLogger()
+	} else {
+		ovsDriver.logger = logger
+	}
 
 	// connect to OVS
 	ovs, err := libovsdb.Connect("localhost", 6640)
 	if err != nil {
-		log.Fatal("Failed to connect to ovsdb")
+		logger.Fatal("Failed to connect to ovsdb")
 	}
 
 	// Setup state
@@ -56,7 +63,7 @@ func NewOvsDriver(bridgeName string) *OvsDriver {
 	// Create the default bridge instance
 	err = ovsDriver.CreateBridge(ovsDriver.OvsBridgeName)
 	if err != nil {
-		log.Fatalf("Error creating the default bridge. Err: %v", err)
+		ovsDriver.logger.Fatalf("Error creating the default bridge. Err: %v", err)
 	}
 
 	// Return the new OVS driver
@@ -67,7 +74,7 @@ func NewOvsDriver(bridgeName string) *OvsDriver {
 func (d *OvsDriver) Delete() error {
 	if d.ovsClient != nil {
 		d.DeleteBridge(d.OvsBridgeName)
-		log.Infof("Deleting OVS bridge: %s", d.OvsBridgeName)
+		d.logger.Infof("Deleting OVS bridge: %s", d.OvsBridgeName)
 		(*d.ovsClient).Disconnect()
 	}
 
@@ -132,13 +139,13 @@ func (self *OvsDriver) getRootUuid() libovsdb.UUID {
 // Wrapper for ovsDB transaction
 func (self *OvsDriver) ovsdbTransact(ops []libovsdb.Operation) error {
 	// Print out what we are sending
-	log.Debugf("Transaction: %+v\n", ops)
+	self.logger.Debugf("Transaction: %+v\n", ops)
 
 	// Perform OVSDB transaction
 	reply, _ := self.ovsClient.Transact("Open_vSwitch", ops...)
 
 	if len(reply) < len(ops) {
-		log.Errorf("Unexpected number of replies. Expected: %d, Recvd: %d", len(ops), len(reply))
+		self.logger.Errorf("Unexpected number of replies. Expected: %d, Recvd: %d", len(ops), len(reply))
 		return errors.New("OVS transaction failed. Unexpected number of replies")
 	}
 
@@ -379,7 +386,7 @@ func (self *OvsDriver) CreateVtep(intfName string, vtepRemoteIP string) error {
 
 	intf["options"], err = libovsdb.NewOvsMap(intfOptions)
 	if err != nil {
-		log.Errorf("error '%s' creating options from %v \n", err, intfOptions)
+		self.logger.Errorf("error '%s' creating options from %v \n", err, intfOptions)
 		return err
 	}
 
@@ -627,7 +634,7 @@ func (self *OvsDriver) Update(context interface{}, tableUpdates libovsdb.TableUp
 	self.populateCache(tableUpdates)
 }
 func (self *OvsDriver) Disconnected(ovsClient *libovsdb.OvsdbClient) {
-	log.Errorf("OVS BD client disconnected")
+	self.logger.Errorf("OVS BD client disconnected")
 }
 func (self *OvsDriver) Locked([]interface{}) {
 }

@@ -12,7 +12,6 @@ import (
 
 	"antrea.io/libOpenflow/openflow15"
 	"antrea.io/libOpenflow/util"
-	log "github.com/sirupsen/logrus"
 )
 
 type TransactionType uint16
@@ -90,15 +89,17 @@ func (tx *Transaction) sendControlRequest(xID uint32, msg util.Message) error {
 }
 
 func (tx *Transaction) newBundleControlMessage(msgType uint16) *openflow15.BundleCtrl {
+	logger := tx.ofSwitch.logger
 	message := openflow15.NewBundleCtrl(tx.ID, msgType, tx.flag.getValue())
-	log.Debugf("newBundleControlMessage XID: %x", message.Header.Xid)
+	logger.Debugf("newBundleControlMessage XID: %x", message.Header.Xid)
 	return message
 }
 
 func (tx *Transaction) createBundleAddMessage(mod OpenFlowModMessage) (*openflow15.BndleAdd, error) {
+	logger := tx.ofSwitch.logger
 	message := openflow15.NewBndleAdd(tx.ID, tx.flag.getValue())
 	message.Message = mod.resetXid(message.Header.Xid)
-	log.Debugf("createBundleAddMessage XID: %x %x", message.Header.Xid, mod.getXid())
+	logger.Debugf("createBundleAddMessage XID: %x %x", message.Header.Xid, mod.getXid())
 	return message, nil
 }
 
@@ -122,7 +123,7 @@ func (tx *Transaction) listenReply() {
 				case tx.controlIntCh <- reply:
 				//TODO:shift timeout case below
 				case <-time.After(messageTimeout):
-					log.Warningln("BundleControlMessage reply message accept timeout")
+					tx.ofSwitch.logger.Warnf("BundleControlMessage reply message accept timeout")
 				}
 			case BundleAddMessage:
 				if !reply.succeed {
@@ -172,10 +173,11 @@ func (tx *Transaction) AddMessage(modMessage OpenFlowModMessage) error {
 	if err != nil {
 		return err
 	}
+	logger := tx.ofSwitch.logger
 	tx.lock.Lock()
 	tx.successAdd[message.Header.Xid] = true
 	tx.lock.Unlock()
-	log.Debugf("AddMessage: Xid: 0x%x", message.Header.Xid)
+	logger.Debugf("AddMessage: Xid: 0x%x", message.Header.Xid)
 	return tx.ofSwitch.Send(message)
 }
 

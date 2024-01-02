@@ -1,6 +1,9 @@
 package ofctrl
 
 import (
+	"fmt"
+	"net"
+
 	"antrea.io/libOpenflow/openflow15"
 	"antrea.io/libOpenflow/util"
 )
@@ -167,4 +170,64 @@ func NewGroup(groupId uint32, groupType GroupType, sw *OFSwitch) *Group {
 		GroupType: groupType,
 		Switch:    sw,
 	}
+}
+
+const (
+	GroupHashSrcIp = iota
+	GroupHashDstIp
+	GroupHashSrcPort
+	GroupHashDstPort
+	GroupHashProtocol
+)
+
+func (self *Group) SetSelectionMethod(hashName string, param uint64, fields ...int) {
+	mt := openflow15.NTRSelectionMethodType(hashName)
+
+	matches := []openflow15.MatchField{}
+	for _, fd := range fields {
+		switch fd {
+		case GroupHashSrcIp:
+			srcIp := openflow15.NewIpv4SrcField(net.IPv4bcast, nil)
+			matches = append(matches, *srcIp)
+		case GroupHashDstIp:
+			dstIp := openflow15.NewIpv4DstField(net.IPv4bcast, nil)
+			matches = append(matches, *dstIp)
+		case GroupHashSrcPort:
+			sp := openflow15.NewTcpSrcField(0xffff)
+			matches = append(matches, *sp)
+		case GroupHashDstPort:
+			dp := openflow15.NewTcpDstField(0xffff)
+			matches = append(matches, *dp)
+		case GroupHashProtocol:
+			prot := openflow15.NewIpProtoField(0xff)
+			matches = append(matches, *prot)
+		}
+	}
+
+	property := openflow15.NewNTRSelectionMethod(mt, param, matches...)
+	self.AddProperty(property)
+}
+
+func (self *Group) AddBucket(bkt *Bucket) error {
+	// convert the Flow actions to the Bucket
+	command := openflow15.FC_ADD
+	bkt.Flow.Table = self.Switch.DefaultTable()
+	flowMod, err := bkt.GenerateFlowModMessage(command)
+	if err != nil {
+		return err
+	}
+
+	for _, inst := range flowMod.Instructions {
+		acts, ok := inst.(*openflow15.InstrActions)
+		if !ok || acts == nil {
+			return fmt.Errorf("wrong action type for Bucket: %T", inst)
+		}
+
+		for _, act := range acts.Actions {
+			bkt.AddAction(act)
+		}
+	}
+
+	self.AddBuckets(&bkt.Bucket)
+	return nil
 }

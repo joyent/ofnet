@@ -155,9 +155,9 @@ func (c *Controller) Application() AppInterface {
 	return c.app
 }
 
-// Listen on a port
-func (c *Controller) Listen(port string) error {
-	addr, _ := net.ResolveTCPAddr("tcp", port)
+// Listen on a listen address
+func (c *Controller) Listen(listenAddr string) error {
+	addr, _ := net.ResolveTCPAddr("tcp", listenAddr)
 
 	var err error
 	c.listener, err = net.ListenTCP("tcp", addr)

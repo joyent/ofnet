@@ -16,8 +16,8 @@ type Logger interface {
 	Errorf(string, ...interface{})
 	Fatalf(string, ...interface{})
 
-	With(string, interface{}) Logger
-	WithError(error) Logger
+	//With(string, interface{}) Logger
+	//WithError(error) Logger
 }
 
 var logger Logger

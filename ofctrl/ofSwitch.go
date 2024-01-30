@@ -231,7 +231,7 @@ func (self *OFSwitch) receive() {
 
 // Handle openflow messages from the switch
 func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
-	self.logger.Debugf("Received message: %+v, on switch: %s", msg, dpid.String())
+	//self.logger.Debugf("Received message: %+v, on switch: %s", msg, dpid.String())
 
 	switch t := msg.(type) {
 	case *common.Header:
@@ -288,6 +288,7 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 		}
 
 		self.publishMessage(tid, result)
+		//self.app.HandleError(self, t)
 
 	case *openflow15.VendorHeader:
 		self.logger.Debugf("Received Experimenter message, VendorType: %d, ExperimenterType: %d, VendorData: %+v", t.Vendor, t.ExperimenterType, t.VendorData)
@@ -326,14 +327,21 @@ func (self *OFSwitch) handleMessages(dpid net.HardwareAddr, msg util.Message) {
 		self.app.PacketRcvd(self, pktIn)
 
 	case *openflow15.FlowRemoved:
+		self.logger.Infof("## FlowRemoved(ofctrl): %+v", t)
+		self.app.HandleFlowRemoved(self, t)
 
 	case *openflow15.PortStatus:
 		// FIXME: This needs to propagated to the app.
+		self.logger.Infof("## PortStatus(ofctrl): %+v", t)
+		self.app.HandlePortStatus(self, t)
+
 	case *openflow15.PacketOut:
 
 	case *openflow15.FlowMod:
+		self.logger.Infof("## FlowModify(ofctrl): %+v", t)
 
 	case *openflow15.PortMod:
+		self.logger.Infof("## PortModify(ofctrl): %+v", t)
 
 	case *openflow15.MultipartRequest:
 

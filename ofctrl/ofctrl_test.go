@@ -71,6 +71,19 @@ func (o *OfActor) SwitchDisconnected(sw *OFSwitch) {
 	o.isSwitchConnected = false
 }
 
+// notify form the switch
+func (o *OfActor) HandleFlowRemoved(sw *OFSwitch, msg *openflow15.FlowRemoved) {
+	o.logger.Debugf("App: FlowRemoved: %+v", msg)
+}
+
+func (o *OfActor) HandlePortStatus(sw *OFSwitch, msg *openflow15.PortStatus) {
+	o.logger.Debugf("App: HandlePortStatus: %+v", msg)
+}
+
+func (o *OfActor) HandleError(sw *OFSwitch, msg *openflow15.ErrorMsg) {
+	o.logger.Debugf("App: HandleError: %+v", msg)
+}
+
 func (o *OfActor) TLVMapReplyRcvd(sw *OFSwitch, tlvTableStatus *TLVTableStatus) {
 	o.logger.Infof("App: Receive TLVMapTable reply: %s", tlvTableStatus)
 	o.tlvTableStatus = tlvTableStatus
@@ -243,7 +256,7 @@ func TestPushMplsFlow(t *testing.T) {
 
 	// push mpls and install it
 	inPortFlow.PushMpls(0x8847)
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify push mpls action exists
@@ -266,7 +279,7 @@ func TestPopMplsFlow(t *testing.T) {
 
 	// pop mpls and install it
 	mplsFlow.PopMpls(0x0800)
-	err = mplsFlow.Next(ofActor.nextTable)
+	err = mplsFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify pop mpls action exists
@@ -289,7 +302,7 @@ func TestCreateDeleteFlow(t *testing.T) {
 
 	// Set vlan and install it
 	inPortFlow.SetVlan(1)
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// create an output
@@ -308,7 +321,7 @@ func TestCreateDeleteFlow(t *testing.T) {
 
 	// Remove vlan and send out on a port
 	macFlow.PopVlan()
-	err = macFlow.Next(output)
+	err = macFlow.Install(output)
 	assert.Nil(t, err, "Error installing the mac flow")
 
 	// Install ip flow
@@ -320,7 +333,7 @@ func TestCreateDeleteFlow(t *testing.T) {
 	})
 	assert.NoError(t, err, "Error installing ip flow")
 
-	err = ipFlow.Next(output)
+	err = ipFlow.Install(output)
 	assert.Nil(t, err, "Error installing the ip flow")
 
 	// install tcp Flow
@@ -334,7 +347,7 @@ func TestCreateDeleteFlow(t *testing.T) {
 		TcpFlagsMask: &tcpFlag,
 	})
 	assert.NoError(t, err, "Error creating tcp flow")
-	err = tcpFlow.Next(output)
+	err = tcpFlow.Install(output)
 	assert.Nil(t, err, "Error installing the tcp flow")
 
 	// verify it got installed
@@ -409,7 +422,7 @@ func TestSetUnsetDscp(t *testing.T) {
 	inPortFlow.SetVlan(1)
 
 	// install it
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify dscp action exists
@@ -447,7 +460,7 @@ func TestMatchSetMetadata(t *testing.T) {
 	inPortFlow.SetMetadata(uint64(0x8800), uint64(0x8800))
 
 	// install it
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify metadata action exists
@@ -476,7 +489,7 @@ func TestMatchSetTunnelId(t *testing.T) {
 	inPortFlow.SetTunnelId(20)
 
 	// install it
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify metadata action exists
@@ -514,7 +527,7 @@ func TestMatchSetIpFields(t *testing.T) {
 	inPortFlow.SetIPField(net.ParseIP("20.1.1.1"), "Src")
 
 	// install it
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify metadata action exists
@@ -552,7 +565,7 @@ func TestMatchIpv6Fields(t *testing.T) {
 	inPortFlow.SetDscp(46)
 
 	// install it
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify metadata action exists
@@ -590,7 +603,7 @@ func TestMatchSetTcpFields(t *testing.T) {
 	inPortFlow.SetL4Field(4000, "TCPSrc")
 
 	// install it
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify metadata action exists
@@ -623,7 +636,7 @@ func TestMatchSetUdpFields(t *testing.T) {
 	inPortFlow.SetL4Field(4000, "UDPSrc")
 
 	// install it
-	err = inPortFlow.Next(ofActor.nextTable)
+	err = inPortFlow.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	// verify metadata action exists
@@ -659,7 +672,7 @@ func TestOFSwitch_DumpFlowStats(t *testing.T) {
 	flow1.SetL4Field(4000, "TCPSrc")
 	f1 := roundID | categoryID | uint64(1)<<24
 	flow1.CookieID = f1
-	err = flow1.Next(ofActor.nextTable)
+	err = flow1.Install(ofActor.nextTable)
 	assert.NoError(t, err, "Error installing inport flow")
 
 	flow2, err := ofActor.inputTable.NewFlow(FlowMatch{
@@ -678,7 +691,7 @@ func TestOFSwitch_DumpFlowStats(t *testing.T) {
 	flow2.CookieID = f2
 
 	// install it
-	err = flow2.Next(ofActor.nextTable)
+	err = flow2.Install(ofActor.nextTable)
 	assert.Nil(t, err, "installing inport flow")
 
 	cookieID := roundID | categoryID
@@ -1773,7 +1786,7 @@ func testNXExtensionNote(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
 	require.NoError(t, err)
 	err = flow1.Note(notes)
 	require.NoError(t, err)
-	err = flow1.Next(ofApp.nextTable)
+	err = flow1.Install(ofApp.nextTable)
 	require.NoError(t, err)
 }
 
@@ -1827,7 +1840,7 @@ func testNXExtensionLearn(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
 	err = flow1.Learn(learn)
 	require.NoError(t, err)
 
-	err = flow1.Next(ofApp.nextTable)
+	err = flow1.Install(ofApp.nextTable)
 	require.NoError(t, err)
 	verifyFlowInstallAndDelete(t, flow1, ofApp.nextTable, brName, ofApp.inputTable.TableId,
 		"priority=100,ip,dl_src=22:22:11:11:11:11,nw_src=192.168.1.10",
@@ -1948,7 +1961,7 @@ func testNXExtensionsTest5(ofApp *OfActor, ovsBr *OvsDriver, t *testing.T) {
 	_ = flow5.AddConjunction(uint32(100), uint8(2), uint8(5))
 	_ = flow5.AddConjunction(uint32(101), uint8(2), uint8(3))
 	// install it
-	err = flow5.Next(NewEmptyElem())
+	err = flow5.Install(NewEmptyElem())
 	assert.NoError(t, err, "Error installing inport flow")
 	matchStr := "priority=100,in_port=5"
 	actionStr := "conjunction(100,2/5),conjunction(101,2/3)"
@@ -2247,7 +2260,7 @@ func verifyNewFlowInstallAndDelete(t *testing.T, flow *Flow, br string, tableID 
 
 func verifyFlowInstallAndDelete(t *testing.T, flow *Flow, nextElem FgraphElem, br string, tableID uint8, matchStr string, actionStr string) {
 	// install it
-	err := flow.Next(nextElem)
+	err := flow.Install(nextElem)
 	assert.NoError(t, err, "Error install flow")
 	flow.MonitorRealizeStatus()
 	assert.Eventually(t, func() bool {

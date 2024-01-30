@@ -27,6 +27,7 @@ import (
 	"antrea.io/libOpenflow/openflow15"
 	"antrea.io/libOpenflow/util"
 	"antrea.io/ofnet/log"
+	//"github.com/cloud-pi/kraken/pkg/log/logger"
 )
 
 // Small subset of openflow fields we currently support
@@ -202,6 +203,17 @@ func (m *FlowBundleMessage) getXid() uint32 {
 
 func (m *FlowBundleMessage) GetMessage() util.Message {
 	return m.message
+}
+
+// Create a new flow on the table
+func NewFlow(match FlowMatch) (*Flow, error) {
+	flow := new(Flow)
+	flow.Table = nil
+	flow.Match = match
+	flow.isInstalled = false
+	flow.flowActions = make([]*FlowAction, 0)
+
+	return flow, nil
 }
 
 // string key for the flow
@@ -755,7 +767,8 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 	var actInstr openflow15.Instruction
 	var addActn bool = false
 	var err error
-	logger := self.Table.Switch.logger
+	//logger := self.Table.Switch.logger
+	logger := log.GetLogger()
 
 	// Create a apply_action instruction to be used if its not already created
 	switch instr.(type) {
@@ -1256,10 +1269,13 @@ func (self *Flow) installFlowActions(flowMod *openflow15.FlowMod,
 
 // GenerateFlowModMessage translates the Flow a FlowMod message according to the commandType.
 func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.FlowMod, err error) {
-	logger := self.Table.Switch.logger
+	//logger := self.Table.Switch.logger
+	logger := log.GetLogger()
+
 	// Create a flowmode entry
 	flowMod = openflow15.NewFlowMod()
-	flowMod.TableId = self.Table.TableId
+	//flowMod.TableId = self.Table.TableId
+	flowMod.TableId = 0
 	flowMod.Priority = self.Match.Priority
 	flowMod.Flags = self.Flags
 	// Cookie ID could be set by client, using globalFlowID if not set
@@ -1399,9 +1415,9 @@ func (self *Flow) UpdateInstallStatus(installed bool) {
 	self.isInstalled = installed
 }
 
-// Set Next element in the Fgraph. This determines what actions will be
+// Set Install element in the Fgraph. This determines what actions will be
 // part of the flow's instruction set
-func (self *Flow) Next(elem FgraphElem) error {
+func (self *Flow) Install(elem FgraphElem) error {
 	self.lock.Lock()
 	defer self.lock.Unlock()
 

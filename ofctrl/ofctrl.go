@@ -94,6 +94,11 @@ type AppInterface interface {
 	// Controller received a packet from the switch
 	PacketRcvd(sw *OFSwitch, pkt *PacketIn)
 
+	// notify form the switch
+	HandleFlowRemoved(sw *OFSwitch, msg *openflow15.FlowRemoved)
+	HandlePortStatus(sw *OFSwitch, msg *openflow15.PortStatus)
+	//HandleError(sw *OFSwitch, msg *openflow15.ErrorMsg)
+
 	// Controller received a multi-part reply from the switch
 	MultipartReply(sw *OFSwitch, rep *openflow15.MultipartReply)
 
@@ -365,12 +370,12 @@ func (c *Controller) handleConnection(conn net.Conn) {
 			// disconnect if an error occurs this early.
 			case *openflow15.ErrorMsg:
 				logger.Warnf("Received OpenFlow error msg: %+v", *m)
-				stream.Shutdown <- true
-				return
+				//stream.Shutdown <- true
+				//return
 			}
 		case err := <-stream.Error:
 			// The connection has been shutdown.
-			logger.Debugf("%v", err)
+			logger.Warnf("stream err=%v", err)
 			return
 		case <-time.After(heartbeatInterval):
 			// This shouldn't happen. If it does, both the controller

@@ -137,6 +137,7 @@ type Flow struct {
 	isInstalled bool          // Is the flow installed in the switch
 	CookieID    uint64        // Cookie ID for flowMod message
 	CookieMask  *uint64       // Cookie Mask for flowMod message
+	Flags       uint16        // ofp_flow_mod_flags
 	flowActions []*FlowAction // List of flow Actions
 	lock        sync.RWMutex  // lock for modifying flow state
 	statusLock  sync.RWMutex  // lock for modifying flow realized status
@@ -1260,6 +1261,7 @@ func (self *Flow) GenerateFlowModMessage(commandType int) (flowMod *openflow15.F
 	flowMod = openflow15.NewFlowMod()
 	flowMod.TableId = self.Table.TableId
 	flowMod.Priority = self.Match.Priority
+	flowMod.Flags = self.Flags
 	// Cookie ID could be set by client, using globalFlowID if not set
 	if self.CookieID == 0 {
 		self.CookieID = globalFlowID // FIXME: need a better id allocation
